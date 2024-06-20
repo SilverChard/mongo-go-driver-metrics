@@ -14,21 +14,13 @@ type MongoMonitor struct {
 	connectionPoolMetrics      *prometheus.GaugeVec
 	commandDurationBucket      *prometheus.HistogramVec
 	poolMonitorFuncChain       []func(evt *event.PoolEvent)
+	debugLog                   bool
 	logInfoFunc                func(format string, args ...any)
 	logWarnFunc                func(format string, args ...any)
 	commandStore               sync.Map
 	monitorSucceededFuncChain  []func(context.Context, *event.CommandSucceededEvent)
 	monitorStartedFuncChain    []func(context.Context, *event.CommandStartedEvent)
 	monitorFailedFuncChain     []func(context.Context, *event.CommandFailedEvent)
-}
-
-var DefaultMetricsOptions = &NewMetricsOptions{
-	PoolEventMetricsCounterName: "mongo_pool_event_total",
-	ConnectionMetricsGaugeName:  "mongo_pool_connection",
-	CommandDurationBucketName:   "mongo_command_duration",
-	commandDurationBucket:       []float64{0.0001, 0.001, 0.01, 0.05, 0.1, 0.5, 0.8, 1, 2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600},
-	LogInfoFunc:                 nil,
-	LogWarnFunc:                 nil,
 }
 
 // NewMongoMonitor create a new mongo monitor, it can generator monitor func for mongo-go-driver monitor
@@ -41,10 +33,11 @@ func NewMongoMonitor(newMetricsOpt *NewMetricsOptions) *MongoMonitor {
 			prometheus.GaugeOpts{Name: opt.ConnectionMetricsGaugeName, Help: "MongoDB connection pool state gauge"}, []string{"type"}),
 		commandDurationBucket: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name: opt.CommandDurationBucketName, Help: "MongoDB every command duration histogram", Buckets: opt.commandDurationBucket}, []string{"type"}),
+				Name: opt.CommandDurationBucketName, Help: "MongoDB every command duration histogram", Buckets: opt.CommandDurationBucket}, []string{"type"}),
 	}
 	monitor.logInfoFunc = opt.LogInfoFunc
 	monitor.logWarnFunc = opt.LogWarnFunc
+	monitor.debugLog = opt.DebugLog
 	monitor.poolMonitorFuncChain = append(monitor.poolMonitorFuncChain, monitor.poolEventMetricsFunc)
 	monitor.monitorSucceededFuncChain = append(monitor.monitorSucceededFuncChain, monitor.commandSucceededFunc)
 	monitor.monitorStartedFuncChain = append(monitor.monitorStartedFuncChain, monitor.commandStartedFunc)
@@ -92,7 +85,7 @@ func (m *MongoMonitor) RegistryMetrics(registry *prometheus.Registry) error {
 		return fmt.Errorf("register connectionPoolMetrics failed: %w", err)
 	}
 	if err := registry.Register(m.commandDurationBucket); err != nil {
-		return fmt.Errorf("register commandDurationBucket failed: %w", err)
+		return fmt.Errorf("register CommandDurationBucket failed: %w", err)
 	}
 	return nil
 }
