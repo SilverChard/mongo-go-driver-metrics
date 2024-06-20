@@ -8,6 +8,9 @@ import (
 )
 
 func (m *MongoMonitor) poolEventMetricsFunc(evt *event.PoolEvent) {
+	if m.debugLog {
+		m.printEvent(evt)
+	}
 	m.connectionPoolEventMetrics.WithLabelValues(evt.Type, evt.Reason).Inc()
 	switch evt.Type {
 	case event.PoolCreated:
@@ -24,31 +27,36 @@ func (m *MongoMonitor) poolEventMetricsFunc(evt *event.PoolEvent) {
 	case event.PoolClosedEvent:
 		m.connectionPoolMetrics.WithLabelValues("idle").Set(0)
 		m.connectionPoolMetrics.WithLabelValues("active").Set(0)
-		m.connectionPoolEventMetrics.WithLabelValues("connectionClosed", evt.Reason).Inc()
 	case event.ConnectionCreated:
-		//m.printEvent(evt)
-		m.connectionPoolEventMetrics.WithLabelValues("connectionCreate", evt.Reason).Inc()
 		m.connectionPoolMetrics.WithLabelValues("idle").Inc()
-	case event.ConnectionReady:
-		m.connectionPoolEventMetrics.WithLabelValues("connectionReady", evt.Reason).Inc()
-	case event.GetStarted:
-		m.connectionPoolEventMetrics.WithLabelValues("checkedOutOfStart", evt.Reason).Inc()
-	case event.GetFailed:
-		m.connectionPoolEventMetrics.WithLabelValues("checkedOutOfFailed", evt.Reason).Inc()
+	case event.ConnectionReady, event.GetStarted, event.GetFailed:
 	case event.GetSucceeded:
-		m.connectionPoolEventMetrics.WithLabelValues("checkedOut", evt.Reason).Inc()
 		m.connectionPoolMetrics.WithLabelValues("active").Inc()
 		m.connectionPoolMetrics.WithLabelValues("idle").Dec()
 	case event.ConnectionReturned:
-		m.connectionPoolEventMetrics.WithLabelValues("checkedIn", evt.Reason).Inc()
 		m.connectionPoolMetrics.WithLabelValues("idle").Inc()
 		m.connectionPoolMetrics.WithLabelValues("active").Dec()
 	case event.ConnectionClosed:
-		m.connectionPoolEventMetrics.WithLabelValues("connectionClosed", evt.Reason).Inc()
-		if evt.Reason == event.ReasonIdle {
+		if evt.Reason == event.ReasonIdle || evt.Reason == event.ReasonStale {
 			m.connectionPoolMetrics.WithLabelValues("idle").Dec()
 		}
 	}
+}
+
+func (m *MongoMonitor) printEvent(evt *event.PoolEvent) {
+	if m.logInfoFunc == nil {
+		return
+	}
+	if evt.PoolOptions != nil {
+		m.logInfoFunc(
+			"{ \"type\": \"%s\", \"address\": \"%s\", \"connectionID\": %d, \"reason\": \"%s\", \"poolOptions:\": {"+
+				"\"maxPoolSize\": %d, \"minPoolSize\": %d }, \"serviceID\": %v, \"error\": %v}",
+			evt.Type, evt.Address, evt.ConnectionID, evt.Reason, evt.PoolOptions.MaxPoolSize, evt.PoolOptions.MinPoolSize, evt.ServiceID, evt.Error)
+		return
+	}
+	m.logInfoFunc(
+		"{ \"type\": \"%s\", \"address\": \"%s\", \"connectionId\": %d, \"reason\": \"%s\", \"serviceId\": %v, \"error\": %v}",
+		evt.Type, evt.Address, evt.ConnectionID, evt.Reason, evt.ServiceID, evt.Error)
 }
 
 func (m *MongoMonitor) commandStartedFunc(_ context.Context, evt *event.CommandStartedEvent) {
@@ -74,6 +82,7 @@ func (m *MongoMonitor) commandSucceededFunc(_ context.Context, evt *event.Comman
 	}
 	if totalDuration == 0 {
 		m.logInfoFunc("[%d][%s] Succeeded command: %s", evt.RequestID, evt.Duration.String(), evt.CommandName)
+		return
 	}
 	m.logInfoFunc("[%d][%s][%s] Succeeded command: %s", evt.RequestID, totalDuration.String(), evt.Duration.String(), evt.CommandName)
 }
