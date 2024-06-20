@@ -1,4 +1,4 @@
-module github.com/SilverChard/mongo-go-driver-metrics
+module github.com/silver-chard/mongo-go-driver-metrics
 
 go 1.20.0
 
